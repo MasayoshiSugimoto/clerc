@@ -78,11 +78,68 @@ function makeLivereloadSocket ({
   WebSocket = unimplemented.WebSocket,
 }) {
 
-  let socket // insert active socket here ;)
+  //Let the client code deal with potential exception. We don't know what is the right thing to do here
+//  const socket = new WebSocket(`ws://${host}:${port}/livereload`)
+//
+//  //No op connect
+//  const connect() => { }
+//
+//  const disconnect = () => {
+//    socket.onopen = () { /*Just in case*/ }
+//    socket.onmessage = () => { /*Ignore message after call to close*/ }
+//    socket.close() //Close and release the socket on the first call
+//    socket = {
+//      close: () => onError(
+//        new Error('Invalid Disconnect: Cannot close a '
+//          + 'socket that has never been opened.')
+//      ),
+//    }
+//  }
+//
+//  socket.onmessage = evt => {
+//    const msg = parseMsg(evt)
+//
+//    if (!msg || msg.command !== 'hello') {
+//      onError(new Error('Invalid "hello" from server'))
+//      return disconnect()
+//    }
+//
+//    socket.onmessage = evt => {
+//      const msg = parseMsg(evt)
+//      if (!msg)
+//        return disconnect()
+//
+//      if (msg.command === 'reload')
+//        messenger.message(msg)
+//
+//      // Finally reached state consumer would view as open
+//      onOpen() // consumer provided callback
+//    }
+//  }
+//
+//  socket.onerror = onError // consumer provided callback
+//  socket.onclose = onClose // consumer provided callback
+//
+//  socket.onopen = async ()=> {
+//
+//    const poll = (timeout) => (resolve, reject) => {
+//      if(socket.readyState === 1)
+//        socket.send(handshake)
+//        promise.resolve(true)
+//      else if (timeout < 0)
+//        disconnect()
+//        promise.reject(new Error('Timeout: WebSocket half-open too long.'))
+//      else
+//        setTimeout( () => { poll(timeout - 100 /*milliseconds*/)(resolve, reject) }, 100 /*milliseconds*/)
+//    }
+//
+//    new Promise(poll(8000 /*milliseconds*/))
+//  }
+//
+//  return { connect, disconnect }
 
-  // Initiate connection and add listeners
-  // Publicly exposed API method.
-  //
+  let socket
+
   function connect() {
     // nothing to do if already connected
     if ( socket && socket.readyState === 1) return
@@ -96,14 +153,60 @@ function makeLivereloadSocket ({
     socket.onmessage = hello
     socket.onerror = onError // consumer provided callback
     socket.onclose = onClose // consumer provided callback
+
     socket.onopen = async ()=> {
-      const fullyOpened = await yesItsReallyOpen()
-      if(fullyOpened) socket.send(handshake)
-      else socket.close()
+
+      socket.onopen = () => { /*Ignore duplicate calls if any*/ }
+
+      const poll = (timeout) => (resolve, reject) => {
+        if(socket.readyState === 1) {
+          socket.send(handshake)
+          resolve(true)
+        } else if (timeout <= 0) {
+          disconnect()
+          resolve(false)
+          onError(new Error('Timeout: WebSocket half-open too long.'))
+        } else {
+          setTimeout( () => {
+              poll(timeout - 100 /*milliseconds*/)(resolve, reject) 
+            },
+            100 /*milliseconds*/)
+        }
+      }
+
+      new Promise(poll(8000 /*milliseconds*/))
     }
 
     return socket
   }
+
+
+//  let socket // insert active socket here ;)
+
+  // Initiate connection and add listeners
+  // Publicly exposed API method.
+  //
+//  function connect() {
+//    // nothing to do if already connected
+//    if ( socket && socket.readyState === 1) return
+//
+//    try{
+//      socket = new WebSocket(
+//        `ws://${host}:${port}/livereload`)
+//    }
+//    catch(e) { return void onError(e) }
+//
+//    socket.onmessage = hello
+//    socket.onerror = onError // consumer provided callback
+//    socket.onclose = onClose // consumer provided callback
+//    socket.onopen = async ()=> {
+//      const fullyOpened = await yesItsReallyOpen()
+//      if(fullyOpened) socket.send(handshake)
+//      else socket.close()
+//    }
+//
+//    return socket
+//  }
 
   // Close the socket
   // Publicly exposed API method
