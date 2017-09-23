@@ -78,65 +78,10 @@ function makeLivereloadSocket ({
   WebSocket = unimplemented.WebSocket,
 }) {
 
-  //Let the client code deal with potential exception. We don't know what is the right thing to do here
-//  const socket = new WebSocket(`ws://${host}:${port}/livereload`)
-//
-//  //No op connect
-//  const connect() => { }
-//
-//  const disconnect = () => {
-//    socket.onopen = () { /*Just in case*/ }
-//    socket.onmessage = () => { /*Ignore message after call to close*/ }
-//    socket.close() //Close and release the socket on the first call
-//    socket = {
-//      close: () => onError(
-//        new Error('Invalid Disconnect: Cannot close a '
-//          + 'socket that has never been opened.')
-//      ),
-//    }
-//  }
-//
-//  socket.onmessage = evt => {
-//    const msg = parseMsg(evt)
-//
-//    if (!msg || msg.command !== 'hello') {
-//      onError(new Error('Invalid "hello" from server'))
-//      return disconnect()
-//    }
-//
-//    socket.onmessage = evt => {
-//      const msg = parseMsg(evt)
-//      if (!msg)
-//        return disconnect()
-//
-//      if (msg.command === 'reload')
-//        messenger.message(msg)
-//
-//      // Finally reached state consumer would view as open
-//      onOpen() // consumer provided callback
-//    }
-//  }
-//
-//  socket.onerror = onError // consumer provided callback
-//  socket.onclose = onClose // consumer provided callback
-//
-//  socket.onopen = async ()=> {
-//
-//    const poll = (timeout) => (resolve, reject) => {
-//      if(socket.readyState === 1)
-//        socket.send(handshake)
-//        promise.resolve(true)
-//      else if (timeout < 0)
-//        disconnect()
-//        promise.reject(new Error('Timeout: WebSocket half-open too long.'))
-//      else
-//        setTimeout( () => { poll(timeout - 100 /*milliseconds*/)(resolve, reject) }, 100 /*milliseconds*/)
-//    }
-//
-//    new Promise(poll(8000 /*milliseconds*/))
-//  }
-//
-//  return { connect, disconnect }
+  const liveReload = {
+      connect: connect,
+      disconnect: disconnect
+    }
 
   let socket
 
@@ -154,96 +99,52 @@ function makeLivereloadSocket ({
     socket.onerror = onError // consumer provided callback
     socket.onclose = onClose // consumer provided callback
 
-    socket.onopen = async ()=> {
+    socket.onopen = async () => onOpen()
 
-      socket.onopen = () => { /*Ignore duplicate calls if any*/ }
-
-      const poll = (timeout) => (resolve, reject) => {
-        if(socket.readyState === 1) {
-          socket.send(handshake)
-          resolve(true)
-        } else if (timeout <= 0) {
-          disconnect()
-          resolve(false)
-          onError(new Error('Timeout: WebSocket half-open too long.'))
-        } else {
-          setTimeout( () => {
-              poll(timeout - 100 /*milliseconds*/)(resolve, reject) 
-            },
-            100 /*milliseconds*/)
-        }
-      }
-
-      new Promise(poll(8000 /*milliseconds*/))
-    }
+    liveReload.connect = () => {
+      console.log('Attempt to connect multiple time with the same socket')
+    } //Override the connect function
 
     return socket
   }
 
+  function onOpen() {
 
-//  let socket // insert active socket here ;)
+    socket.onopen = () => { /*Ignore duplicate calls if any*/ }
 
-  // Initiate connection and add listeners
-  // Publicly exposed API method.
-  //
-//  function connect() {
-//    // nothing to do if already connected
-//    if ( socket && socket.readyState === 1) return
-//
-//    try{
-//      socket = new WebSocket(
-//        `ws://${host}:${port}/livereload`)
-//    }
-//    catch(e) { return void onError(e) }
-//
-//    socket.onmessage = hello
-//    socket.onerror = onError // consumer provided callback
-//    socket.onclose = onClose // consumer provided callback
-//    socket.onopen = async ()=> {
-//      const fullyOpened = await yesItsReallyOpen()
-//      if(fullyOpened) socket.send(handshake)
-//      else socket.close()
-//    }
-//
-//    return socket
-//  }
+    const poll = (timeout) => (resolve, reject) => {
+      if(socket.readyState === 1) {
+        socket.send(handshake)
+        resolve(true)
+      } else if (timeout <= 0) {
+        disconnect()
+        resolve(false)
+        onError(new Error('Timeout: WebSocket half-open too long.'))
+      } else {
+        setTimeout( () => {
+            poll(timeout - 100 /*milliseconds*/)(resolve, reject) 
+          },
+          100 /*milliseconds*/)
+      }
+    }
+
+    new Promise(poll(8000 /*milliseconds*/))
+  }
 
   // Close the socket
   // Publicly exposed API method
   //
   function disconnect() {
-    if (!socket || !socket.close)
+    if (!socket)
       return void onError(
         new Error('Invalid Disconnect: Cannot close a '
           + 'socket that has never been opened.')
       )
     socket.close()
-    return socket
-  }
-
-  // Turns out a websocket can emit `open` before it's
-  // really open 😡. Let's wait until it's open-state is
-  // fully resolved.
-  //
-  function yesItsReallyOpen(){
-    const isOpen = promise()
-
-    const poll = ()=> {
-      if(socket.readyState === 1)
-        isOpen.resolve(true)
-
-      else setTimeout(poll, 100)
-    }
-
-    // Race against a timeout. 8 seconds is long time to
-    // wait for this. But hey, why not?
-    setTimeout(() => {isOpen.reject(
-      new Error('Timeout: WebSocket half-open too long.'))
-    }, 8000),
-
-    poll()
-    return isOpen
-      .catch(e => { onError(e); return false })
+    liveReload.disconnect = () =>
+      onError(new Error('Atempt to disconnect twice'))
+    //Not sure why we return the socket and break the encapsulation here
+    return socket 
   }
 
   // Try to parse JSON and pass any error to consumer
@@ -261,33 +162,26 @@ function makeLivereloadSocket ({
   //
   function hello(evt) {
     const msg = parseMsg(evt)
-    const helloError =
-      new Error('Invalid "hello" from server')
 
     if (!msg || msg.command !== 'hello') {
-      onError(helloError)
-      return void socket.close()
+      onError(new Error('Invalid "hello" from server'))
+      return void liveReload.disconnect()
     }
 
-    listen()
-  }
-
-  // Switch to listening for arbitrary incoming messages.
-  //
-  function listen() {
     socket.onmessage = evt=> {
       const msg = parseMsg(evt)
       if (!msg)
-        return void socket.close()
+        return void liveReload.disconnect()
 
       if (msg.command === 'reload')
         messenger.message(msg)
     }
+
     // Finally reached state consumer would view as open
     onOpen() // consumer provided callback
   }
 
-  return { connect, disconnect }
+  return liveReload
 }
 
 export default makeLivereloadSocket
