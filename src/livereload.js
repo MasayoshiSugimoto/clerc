@@ -80,7 +80,7 @@ function makeLivereloadSocket ({
 
   const liveReload = {
       connect: connect,
-      disconnect: disconnect
+      disconnect: () => { onError(new Error('Atempt to call disconnect before connection')) }
     }
 
   let socket
@@ -94,6 +94,8 @@ function makeLivereloadSocket ({
         `ws://${host}:${port}/livereload`)
     }
     catch(e) { return void onError(e) }
+
+    liveReload.disconnect = disconnect
 
     socket.onmessage = hello
     socket.onerror = onError // consumer provided callback
@@ -117,7 +119,7 @@ function makeLivereloadSocket ({
         socket.send(handshake)
         resolve(true)
       } else if (timeout <= 0) {
-        disconnect()
+        liveReload.disconnect()
         resolve(false)
         onError(new Error('Timeout: WebSocket half-open too long.'))
       } else {
